@@ -1,15 +1,19 @@
 from textnode import TextNode, TextType
 from markdown_blocks import markdown_to_html_node
 import os
+import sys
 import shutil
 
 
 def main():
-    copy_directory("static", "public")
+    # Default basepath to "/" if not provided
+    basepath = sys.argv[1] if len(sys.argv) > 1 else "/"
+    copy_directory("static", "docs")
     generate_pages_recursive(
         "content/",
         "template.html",
-        "public/",
+        "docs/",
+        basepath
     )
 
 
@@ -64,7 +68,7 @@ def extract_title(markdown):
         raise Exception("Markdown content is empty")
     return lines[0].strip("# ").strip()
 
-def generate_page(from_path, template_path, dest_path):
+def generate_page(from_path, template_path, dest_path, base_path):
     """
     Reads content from the source file (from_path) and the template file (template_path),
     and prepares to generate the final page at the destination (dest_path).
@@ -85,12 +89,14 @@ def generate_page(from_path, template_path, dest_path):
     # Replace placeholders in the template with actual content
     html = template_content.replace("{{ Content }}", html)
     html = html.replace("{{ Title }}", title)
+    html = html.replace("href=\"/", f"href=\"{base_path}")
+    html = html.replace("src=\"/", f"src=\"{base_path}")
     # Write the final HTML to the destination file
     with open(dest_path, "w", encoding="utf-8") as dest_file:
         dest_file.write(html)
         print(f"Wrote content to {dest_path}")
 
-def generate_pages_recursive(dir_path_content, template_path, dest_dir_path):
+def generate_pages_recursive(dir_path_content, template_path, dest_dir_path, base_path):
     """
     Recursively generates pages from markdown files in the source directory (from_path)
     using the template file (template_path) and saves them to the destination directory (dest_path).
@@ -117,6 +123,6 @@ def generate_pages_recursive(dir_path_content, template_path, dest_dir_path):
             if file_name.endswith(".md"):
                 src_file = os.path.join(root, file_name)
                 dest_file = os.path.join(dest_path, file_name.replace(".md", ".html"))
-                generate_page(src_file, template_path, dest_file)
+                generate_page(src_file, template_path, dest_file, base_path)
 
 main()
