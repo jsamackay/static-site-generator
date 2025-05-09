@@ -1,100 +1,122 @@
-from textnode import TextNode 
-from textnode import TextType
-from leafnode import LeafNode
-import re
+from textnode import TextNode, TextType
+from markdown_blocks import markdown_to_html_node
+import os
+import shutil
+
 
 def main():
-    text_node = TextNode("This is some anchor text", TextType.LINK, "https://boot.dev")
+    copy_directory("static", "public")
+    generate_pages_recursive(
+        "content/",
+        "template.html",
+        "public/",
+    )
 
-def text_node_to_html_node(text_node):
-    if text_node.text_type == TextType.TEXT:
-        return LeafNode(tag=None, value=text_node.text)
-    elif text_node.text_type == TextType.BOLD:
-        return LeafNode(tag="b", value=text_node.text)
-    elif text_node.text_type == TextType.ITALIC:
-        return LeafNode(tag="i", value=text_node.text)
-    elif text_node.text_type == TextType.CODE:
-        return LeafNode(tag="code", value=text_node.text)
-    elif text_node.text_type == TextType.LINK:
-        return LeafNode(tag="a", value=text_node.text, props={"href": text_node.url})
-    elif text_node.text_type == TextType.IMAGE:
-        return LeafNode(tag="img", props={"src": text_node.url, "alt": text_node.text})
 
-def split_nodes_delimiter(old_nodes, delimiter, text_type):
-    new_nodes = []
-    for old_node in old_nodes:
-        if old_node.text_type != TextType.TEXT:
-            new_nodes.append(old_node)
-            continue
-        split_nodes = []
-        sections = old_node.text.split(delimiter)
-        if len(sections) % 2 == 0:
-            raise ValueError("invalid markdown, formatted section not closed")
-        for i in range(len(sections)):
-            if sections[i] == "":
-                continue
-            if i % 2 == 0:
-                split_nodes.append(TextNode(sections[i], TextType.TEXT))
-            else:
-                split_nodes.append(TextNode(sections[i], text_type))
-        new_nodes.extend(split_nodes)
-    return new_nodes
+def copy_directory(source, destination):
+    """
+    Recursively copies all contents from the source directory to the destination directory.
+    Deletes all contents of the destination directory before copying.
+    Logs each file and directory being copied.
+    """
+    # Ensure the source directory exists
+    if not os.path.exists(source):
+        raise FileNotFoundError(f"Source directory '{source}' does not exist.")
 
-def split_nodes_image(old_nodes):
-    new_nodes = []
-    for old_node in old_nodes:
-        if old_node.text_type != TextType.TEXT:
-            new_nodes.append(old_node)
-            continue
+    # Delete all contents of the destination directory
+    if os.path.exists(destination):
+        shutil.rmtree(destination)
+        print(f"Deleted all contents of '{destination}'.")
 
-        # Use regex to split text into parts (images and surrounding text)
-        pattern = r"!\[(.*?)\]\((.*?)\)"
-        last_end = 0
-        for match in re.finditer(pattern, old_node.text):
-            start, end = match.span()
-            # Add the text before the link as a TextNode
-            if start > last_end:
-                new_nodes.append(TextNode(old_node.text[last_end:start], TextType.TEXT))
-            # Add the link as a TextNode with TextType.LINK
-            link_text, url = match.groups()
-            new_nodes.append(TextNode(link_text, TextType.IMAGE, url))
-            last_end = end
-        # Add the remaining text after the last link
-        if last_end < len(old_node.text):
-            new_nodes.append(TextNode(old_node.text[last_end:], TextType.TEXT))
-    return new_nodes
+    # Recreate the destination directory
+    os.makedirs(destination)
+    print(f"Created destination directory '{destination}'.")
 
-def split_nodes_link(old_nodes):
-    new_nodes = []
-    for old_node in old_nodes:
-        if old_node.text_type != TextType.TEXT:
-            new_nodes.append(old_node)
-            continue
+    # Walk through the source directory
+    for root, dirs, files in os.walk(source):
+        # Compute the relative path from the source directory
+        relative_path = os.path.relpath(root, source)
+        # Compute the corresponding destination path
+        dest_path = os.path.join(destination, relative_path)
 
-        # Use regex to find links and their surrounding text
-        pattern = r"(?<!\!)\[(.*?)\]\((.*?)\)"
-        last_end = 0
-        for match in re.finditer(pattern, old_node.text):
-            start, end = match.span()
-            # Add the text before the link as a TextNode
-            if start > last_end:
-                new_nodes.append(TextNode(old_node.text[last_end:start], TextType.TEXT))
-            # Add the link as a TextNode with TextType.LINK
-            link_text, url = match.groups()
-            new_nodes.append(TextNode(link_text, TextType.LINK, url))
-            last_end = end
-        # Add the remaining text after the last link
-        if last_end < len(old_node.text):
-            new_nodes.append(TextNode(old_node.text[last_end:], TextType.TEXT))
-    return new_nodes
+        # Create directories in the destination
+        for dir_name in dirs:
+            dir_path = os.path.join(dest_path, dir_name)
+            os.makedirs(dir_path, exist_ok=True)
+            print(f"Created directory: {dir_path}")
 
-def extract_markdown_images(text):
-    return re.findall(r"!\[([^\[\]]*)\]\(([^\(\)]*)\)", text)
+        # Copy files to the destination
+        for file_name in files:
+            src_file = os.path.join(root, file_name)
+            dest_file = os.path.join(dest_path, file_name)
+            shutil.copy2(src_file, dest_file)
+            print(f"Copied file: {src_file} -> {dest_file}")
 
-def extract_markdown_links(text):
-    return re.findall(r"(?<!!)\[([^\[\]]*)\]\(([^\(\)]*)\)", text)
+def extract_title(markdown):
+    """
+    Extracts the title from the markdown content.
+    The title is expected to be the first line of the markdown.
+    """
+    if len(markdown.strip()) == 0:
+        raise Exception("Markdown content is empty")
+    lines = markdown.split("\n")
+    if len(lines) == 0:
+        raise Exception("Markdown content is empty")
+    return lines[0].strip("# ").strip()
 
-def text_to_textnodes(text):
-    return split_nodes_delimiter(split_nodes_delimiter(split_nodes_delimiter(split_nodes_image(split_nodes_link(text)), "`", TextType.CODE), "_", TextType.ITALIC), "**", TextType.BOLD)
+def generate_page(from_path, template_path, dest_path):
+    """
+    Reads content from the source file (from_path) and the template file (template_path),
+    and prepares to generate the final page at the destination (dest_path).
+    """
+    # Read content from the source file
+    with open(from_path, "r", encoding="utf-8") as from_file:
+        from_content = from_file.read()
+        print(f"Read content from {from_path}")
+
+    # Read content from the template file
+    with open(template_path, "r", encoding="utf-8") as template_file:
+        template_content = template_file.read()
+        print(f"Read content from {template_path}")
+
+    html = markdown_to_html_node(from_content).to_html()
+    title = extract_title(from_content)
+    
+    # Replace placeholders in the template with actual content
+    html = template_content.replace("{{ Content }}", html)
+    html = html.replace("{{ Title }}", title)
+    # Write the final HTML to the destination file
+    with open(dest_path, "w", encoding="utf-8") as dest_file:
+        dest_file.write(html)
+        print(f"Wrote content to {dest_path}")
+
+def generate_pages_recursive(dir_path_content, template_path, dest_dir_path):
+    """
+    Recursively generates pages from markdown files in the source directory (from_path)
+    using the template file (template_path) and saves them to the destination directory (dest_path).
+    """
+    # Ensure the destination directory exists
+    os.makedirs(dest_dir_path, exist_ok=True)
+    print(f"Created destination directory '{dest_dir_path}'.")
+
+    # Walk through the source directory
+    for root, dirs, files in os.walk(dir_path_content):
+        # Compute the relative path from the source directory
+        relative_path = os.path.relpath(root, dir_path_content)
+        # Compute the corresponding destination path
+        dest_path = os.path.join(dest_dir_path, relative_path)
+
+        # Create directories in the destination
+        for dir_name in dirs:
+            dir_path = os.path.join(dest_path, dir_name)
+            os.makedirs(dir_path, exist_ok=True)
+            print(f"Created directory: {dir_path}")
+
+        # Process markdown files
+        for file_name in files:
+            if file_name.endswith(".md"):
+                src_file = os.path.join(root, file_name)
+                dest_file = os.path.join(dest_path, file_name.replace(".md", ".html"))
+                generate_page(src_file, template_path, dest_file)
 
 main()
